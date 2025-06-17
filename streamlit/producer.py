@@ -14,7 +14,8 @@ producer = KafkaProducer(
 
 # Get the current script's directory and read the CSV file with correct path
 current_dir = os.path.dirname(os.path.abspath(__file__))
-csv_path = os.path.join(current_dir, 'dataset.csv')
+parent_dir = os.path.dirname(current_dir)
+csv_path = os.path.join(parent_dir, 'data', 'dataset.csv')
 
 # Print the path being used
 print(f"Attempting to read CSV from: {csv_path}")
