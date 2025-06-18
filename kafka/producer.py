@@ -55,7 +55,7 @@ def stream_data(start_index=0):
 
 if __name__ == "__main__":
     try:
-        stream_data(start_index=1505680)
+        stream_data()
     except FileNotFoundError:
         print(f"Error: Could not find dataset.csv at {csv_path}")
         print(f"Current working directory: {os.getcwd()}")
