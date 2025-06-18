@@ -1,5 +1,5 @@
 # Requirements for Job Recommendation System
-pyspark>=3.4.0
+pyspark==3.5.1
 pandas>=1.5.0
 numpy>=1.21.0
 scikit-learn>=1.0.0
