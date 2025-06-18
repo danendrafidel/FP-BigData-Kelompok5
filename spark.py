@@ -43,6 +43,7 @@ try:
     from pyspark.sql import SparkSession
     from pyspark.sql.functions import *
     from pyspark.sql.types import *
+    from pyspark.sql.window import Window
     from pyspark.ml.feature import StringIndexer, VectorAssembler, HashingTF, IDF, StandardScaler
     from pyspark.ml.recommendation import ALS
     from pyspark.ml.classification import RandomForestClassifier
@@ -250,18 +251,44 @@ class JobRecommendationSystem:
             .otherwise(1.0)
         )
         
-        # Index categorical columns if they exist
+        # Index categorical columns if they exist, but limit cardinality
         categorical_cols = []
         for col_name in available_cols:
             if df_cleaned.schema[col_name].dataType == StringType():
                 categorical_cols.append(col_name)
         
-        # Index up to 3 categorical columns
+        # Index up to 3 categorical columns with cardinality limits
         indexers = []
         for i, col_name in enumerate(categorical_cols[:3]):
             output_col = f"cat_feature_{i}"
-            indexer = StringIndexer(inputCol=col_name, outputCol=output_col, handleInvalid="keep")
+            
+            # Limit cardinality by taking only top 50 most frequent values
+            # and grouping the rest as "other"
+            window_spec = Window.orderBy(col("count").desc())
+            top_values = df_cleaned.groupBy(col_name).count() \
+                .orderBy(col("count").desc()) \
+                .limit(50) \
+                .select(col_name)
+            
+            # Create a list of top values for filtering
+            top_values_list = [row[col_name] for row in top_values.collect()]
+            
+            # Replace values not in top 50 with "other"
+            df_cleaned = df_cleaned.withColumn(
+                f"{col_name}_limited",
+                when(col(col_name).isin(top_values_list), col(col_name))
+                .otherwise(lit("other"))
+            )
+            
+            # Now index the limited column
+            indexer = StringIndexer(
+                inputCol=f"{col_name}_limited", 
+                outputCol=output_col, 
+                handleInvalid="keep"
+            )
             indexers.append(indexer)
+            
+            print(f"  - Limited categorical column '{col_name}' to top 50 values + 'other'")
         
         if indexers:
             pipeline_indexer = Pipeline(stages=indexers)
@@ -320,15 +347,30 @@ class JobRecommendationSystem:
         # Create features from available columns
         feature_cols = []
         
-        # Use categorical features if available
+        # Use categorical features if available, but limit to low-cardinality ones
         cat_features = [col for col in df.columns if col.startswith("cat_feature_")]
-        feature_cols.extend(cat_features)
+        
+        # Filter out high-cardinality categorical features
+        low_cardinality_features = []
+        for col_name in cat_features:
+            try:
+                distinct_count = df.select(col_name).distinct().count()
+                if distinct_count <= 50:  # Only use features with 50 or fewer unique values
+                    low_cardinality_features.append(col_name)
+                    print(f"  - Using categorical feature '{col_name}' with {distinct_count} unique values")
+                else:
+                    print(f"  - Skipping categorical feature '{col_name}' with {distinct_count} unique values (too many)")
+            except Exception as e:
+                print(f"  - Error checking cardinality of '{col_name}': {e}")
+                continue
+        
+        feature_cols.extend(low_cardinality_features)
         
         # Add user_id and item_id as features
         feature_cols.extend(["user_id", "item_id"])
         
         if not feature_cols:
-            print("No features available for content-based filtering")
+            print("No suitable features available for content-based filtering")
             return None, None
         
         print(f"Using features: {feature_cols}")
@@ -350,12 +392,13 @@ class JobRecommendationSystem:
         # Split data
         (training, test) = df_features.randomSplit([0.8, 0.2], seed=42)
         
-        # Random Forest classifier
+        # Random Forest classifier with increased maxBins
         rf = RandomForestClassifier(
             featuresCol="features",
             labelCol="high_rating",
             numTrees=10,
             maxDepth=5,
+            maxBins=1000,  # Increased from default 32 to handle high-cardinality features
             seed=42
         )
         
