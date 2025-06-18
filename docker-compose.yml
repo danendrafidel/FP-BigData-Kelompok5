@@ -79,18 +79,31 @@ services:
     networks:
       - trino-network
 
-  streamlit:
+  kafka-consumer:
     build:
-      context: ./streamlit
+      context: ./kafka
       dockerfile: Dockerfile
-    ports:
-      - "8501:8501"
-    volumes:
-      - ./streamlit:/app
+    container_name: kafka-consumer
     depends_on:
       - kafka
+      - minio
+    volumes:
+      - ./kafka:/app
     networks:
       - trino-network
+
+  # streamlit:
+  #   build:
+  #     context: ./streamlit
+  #     dockerfile: Dockerfile
+  #   ports:
+  #     - "8501:8501"
+  #   volumes:
+  #     - ./streamlit:/app
+  #   depends_on:
+  #     - kafka
+  #   networks:
+  #     - trino-network
 
 volumes:
   minio-data:

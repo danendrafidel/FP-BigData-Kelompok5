@@ -28,28 +28,25 @@ total_processed = 0
 total_skipped = 0
 
 # Stream each row with duplicate prevention and counting
-def stream_data():
+def stream_data(start_index=0):
     global total_processed, total_skipped
-    
+
     # Print available columns
     print("Available columns in CSV:", df.columns.tolist())
     print(f"Total records in CSV: {len(df)}")
+    print(f"Starting from row index: {start_index}")
     
-    for index, row in df.iterrows():
+    for index, row in df.iloc[start_index:].iterrows():
         data = row.to_dict()
         
         # Create a unique identifier using just the title
         record_id = str(data.get('Job Title', ''))
 
-        if record_id not in processed_records:
-            producer.send('jobs-topic', data)
-            processed_records.add(record_id)
-            total_processed += 1
-            print(f"Sent ({total_processed}): {data['Job Title']}")
-            time.sleep(0.5)
-        else:
-            total_skipped += 1
-            print(f"Skipped duplicate ({total_skipped}): {data['Job Title']}")
+        producer.send('jobs-topic', data)
+        processed_records.add(record_id)
+        total_processed += 1
+        print(f"Sent ({index}): {data['Job Title']}")
+        time.sleep(0.01)
     
     print("\nFinal Statistics:")
     print(f"Total records processed: {total_processed}")
@@ -58,7 +55,7 @@ def stream_data():
 
 if __name__ == "__main__":
     try:
-        stream_data()
+        stream_data(start_index=1505680)
     except FileNotFoundError:
         print(f"Error: Could not find dataset.csv at {csv_path}")
         print(f"Current working directory: {os.getcwd()}")
