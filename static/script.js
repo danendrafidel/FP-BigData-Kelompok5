@@ -117,6 +117,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
         // Buat ID unik untuk setiap elemen collapse agar tidak bentrok
         const collapseId = `details-${job.job_id}-${index}`;
+        const mapId = `map-${job.job_id}-${index}`;
 
         // Template literal untuk membuat HTML kartu secara dinamis
         return `
@@ -161,6 +162,12 @@ document.addEventListener("DOMContentLoaded", () => {
                 <p>Reach out to <strong>${
                   job.contact_person || "HR"
                 }</strong> at <em>${job.contact || "Not provided"}</em></p>
+                <!-- PETA -->
+                ${
+                  job.latitude && job.longitude
+                    ? `<div class="job-map" id="${mapId}"></div><a href="https://maps.google.com/?q=${job.latitude},${job.longitude}" class="btn btn-sm btn-outline-success mt-2" target="_blank" rel="noopener">Lihat di Google Maps</a>`
+                    : ""
+                }
               </div>
             </div>
           </div>
@@ -175,6 +182,43 @@ document.addEventListener("DOMContentLoaded", () => {
       .join("");
 
     recommendationsDiv.innerHTML = recommendationsHTML;
+
+    // Inisialisasi peta Leaflet saat collapse dibuka
+    jobsToDisplay.forEach((job, index) => {
+      if (job.latitude && job.longitude) {
+        const collapseId = `details-${job.job_id}-${index}`;
+        const mapId = `map-${job.job_id}-${index}`;
+        const collapseEl = document.getElementById(collapseId);
+        if (collapseEl) {
+          collapseEl.addEventListener("show.bs.collapse", function () {
+            // Cek jika peta sudah pernah diinisialisasi
+            if (!collapseEl.dataset.mapInitialized) {
+              setTimeout(() => {
+                const mapDiv = document.getElementById(mapId);
+                if (mapDiv && !mapDiv.dataset.mapLoaded) {
+                  const map = L.map(mapId, {
+                    center: [job.latitude, job.longitude],
+                    zoom: 4,
+                    scrollWheelZoom: false,
+                    zoomControl: true,
+                  });
+                  L.tileLayer(
+                    "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+                    {
+                      attribution:
+                        '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+                    }
+                  ).addTo(map);
+                  L.marker([job.latitude, job.longitude]).addTo(map);
+                  mapDiv.dataset.mapLoaded = "1";
+                }
+              }, 250); // Delay agar div sudah visible
+              collapseEl.dataset.mapInitialized = "1";
+            }
+          });
+        }
+      }
+    });
   }
 
   // === 6. EVENT LISTENER UNTUK FILTER (EVENT DELEGATION) ===

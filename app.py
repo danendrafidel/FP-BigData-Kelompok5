@@ -9,6 +9,7 @@ from sklearn.metrics.pairwise import cosine_similarity
 import re
 import os
 import requests # <-- BARU: Untuk membuat permintaan HTTP ke API bendera
+import time
 
 app = Flask(__name__)
 
@@ -25,6 +26,23 @@ tfidf_matrix_jobs = None
 job_data_df = None
 cosine_sim_matrix_jobs = None
 country_code_map = {} # <-- BARU: Untuk menyimpan mapping nama negara ke kode
+GOOGLE_MAPS_API_KEY = os.environ.get('GOOGLE_MAPS_API_KEY')
+geocode_cache = {}
+
+# Tambahkan mapping pusat negara (contoh beberapa negara, bisa ditambah sesuai kebutuhan)
+country_centers = {
+    'indonesia': {'lat': -2.5489, 'lon': 118.0149},
+    'united states': {'lat': 39.8283, 'lon': -98.5795},
+    'singapore': {'lat': 1.3521, 'lon': 103.8198},
+    'malaysia': {'lat': 4.2105, 'lon': 101.9758},
+    'india': {'lat': 20.5937, 'lon': 78.9629},
+    'australia': {'lat': -25.2744, 'lon': 133.7751},
+    'japan': {'lat': 36.2048, 'lon': 138.2529},
+    'germany': {'lat': 51.1657, 'lon': 10.4515},
+    'united kingdom': {'lat': 55.3781, 'lon': -3.4360},
+    'canada': {'lat': 56.1304, 'lon': -106.3468},
+    # ... tambahkan negara lain sesuai kebutuhan ...
+}
 
 def _clean_text(text):
     """Basic text cleaning: lowercase, remove punctuation, extra spaces."""
@@ -96,6 +114,30 @@ def load_country_codes():
         print(f"✗ An unexpected error occurred while processing country codes: {e}")
         return False
 
+def geocode_city_country(city, country):
+    """Geocode kota+negara ke lat/lon via Google Maps API, cache hasilnya."""
+    if not city or not country or not GOOGLE_MAPS_API_KEY:
+        return None, None
+    key = f"{city.lower().strip()}|{country.lower().strip()}"
+    if key in geocode_cache:
+        return geocode_cache[key]
+    try:
+        url = (
+            f"https://maps.googleapis.com/maps/api/geocode/json?address="
+            f"{city},{country}&key={GOOGLE_MAPS_API_KEY}"
+        )
+        resp = requests.get(url, timeout=5)
+        if resp.status_code == 200:
+            data = resp.json()
+            if data['status'] == 'OK' and data['results']:
+                loc = data['results'][0]['geometry']['location']
+                lat, lon = loc['lat'], loc['lng']
+                geocode_cache[key] = (lat, lon)
+                return lat, lon
+    except Exception as e:
+        print(f"[Geocode Error] {city}, {country}: {e}")
+    return None, None
+
 @app.route('/')
 def home():
     return render_template('index.html')
@@ -150,7 +192,21 @@ def recommend_by_query():
             country_name = job_info.get('Country', '').strip().lower()
             country_code = country_code_map.get(country_name)
             flag_url = f"https://flagcdn.com/w40/{country_code}.png" if country_code else DEFAULT_GLOBE_URL
-            
+
+            # Ambil lat/lon: jika ada di data, pakai, jika tidak, coba geocode kota+negara, jika gagal pakai pusat negara
+            lat = job_info.get('latitude')
+            lon = job_info.get('longitude')
+            city = job_info.get('location')
+            if (not lat or pd.isna(lat)) or (not lon or pd.isna(lon)):
+                # Coba geocode kota+negara
+                lat, lon = geocode_city_country(city, country_name)
+                if not lat or not lon:
+                    center = country_centers.get(country_name)
+                    if center:
+                        lat, lon = center['lat'], center['lon']
+                    else:
+                        lat, lon = None, None
+
             recommendations.append({
                 "job_id": str(job_info['Job Id']),
                 "title": job_info['Job Title'],
@@ -167,6 +223,8 @@ def recommend_by_query():
                 'qualification': job_info['Qualifications'],
                 'country': job_info['Country'],
                 'flag_url': flag_url,
+                'latitude': lat,
+                'longitude': lon,
                 "similarity_score": round(float(cosine_similarities[idx]), 4)
             })
         
