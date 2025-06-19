@@ -1,0 +1,110 @@
+/* Gaya dari sebelumnya... */
+body {
+  background-color: #f8f9fa;
+  font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+}
+h1.main-title {
+  color: #343a40;
+  font-weight: 300;
+}
+.recommendation-card {
+  border: 1px solid #e9ecef; /* Sedikit border agar lebih tegas */
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.05);
+  transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+  border-radius: 0.5rem;
+  overflow: hidden; /* Penting agar border-radius bekerja dengan baik */
+}
+.recommendation-card:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.1);
+}
+.card-header-flex {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background-color: #ffffff;
+  border-bottom: 1px solid #e9ecef;
+}
+.card-header-flex h5 {
+  margin-bottom: 0;
+  color: #0d6efd;
+}
+.country-flag {
+  height: 24px;
+  width: auto;
+  border-radius: 3px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+.job-detail-label {
+  font-weight: 600;
+  color: #495057;
+}
+
+#countryFilterContainer {
+  display: flex;
+  flex-wrap: wrap; /* Agar tombol pindah baris jika tidak muat */
+  gap: 0.5rem; /* Jarak antar tombol */
+  align-items: center;
+}
+
+.filter-btn {
+  border-radius: 20px; /* Membuat tombol lebih modern (pil) */
+  padding: 0.25rem 0.75rem;
+  font-size: 0.9em;
+  transition: background-color 0.2s, color 0.2s;
+}
+
+/* Gaya untuk tombol filter yang sedang aktif */
+.filter-btn.active {
+  background-color: #0d6efd; /* Biru primer Bootstrap */
+  color: white;
+  font-weight: 600;
+}
+
+/* Styling untuk badge metadata */
+.job-meta-badges {
+  display: flex;
+  gap: 0.5rem; /* Jarak antar badge */
+  flex-wrap: wrap; /* Agar badge pindah ke baris baru jika tidak muat */
+  margin-top: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+/* Area detail yang bisa di-collapse */
+.details-collapse {
+  background-color: #f8f9fa; /* Warna latar sedikit berbeda */
+  border-top: 1px dashed #ced4da;
+  padding: 1rem;
+}
+
+.details-collapse h6 {
+  font-weight: 700;
+  color: #343a40;
+}
+/* ▲▲▲ AKHIR GAYA BARU ▲▲▲ */
+
+.card-footer {
+  background-color: #f8f9fa;
+  text-align: right;
+  font-size: 0.9em;
+  border-top: 1px solid #e9ecef;
+}
+
+#loader {
+  border: 4px solid #f3f3f3;
+  border-top: 4px solid #0d6efd;
+  border-radius: 50%;
+  width: 40px;
+  height: 40px;
+  animation: spin 1s linear infinite;
+  margin: 20px auto;
+}
+
+@keyframes spin {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
