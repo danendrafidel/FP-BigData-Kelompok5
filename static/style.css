@@ -20,16 +20,32 @@
 body.dark-mode {
   --color-bg: #181a1b;
   --color-bg-card: #23272f;
-  --color-text: #f1f3f5;
+  --color-text: #f8f9fa;
   --color-title: #4f8cff;
   --color-border: #343a40;
   --color-accent: #4f8cff;
   --color-muted: #b0b3b8;
-  --color-badge: #2c3035;
+  --color-badge: #23272f;
   --color-footer: #23272f;
   --color-shadow: rgba(0, 0, 0, 0.25);
 }
-
+body.dark-mode .job-detail-label,
+body.dark-mode .card-header-flex h5,
+body.dark-mode .card-title,
+body.dark-mode .card-text {
+  color: var(--color-text) !important;
+}
+body.dark-mode .filter-btn {
+  color: var(--color-text) !important;
+  background: var(--color-badge) !important;
+  border-color: var(--color-border) !important;
+}
+body.dark-mode .filter-btn.active,
+body.dark-mode .filter-btn:focus {
+  background: var(--color-accent) !important;
+  color: #fff !important;
+  border-color: var(--color-accent) !important;
+}
 body {
   background-color: var(--color-bg);
   font-family: var(--font-main);
@@ -181,4 +197,33 @@ h1.main-title {
   box-shadow: 0 2px 8px var(--color-shadow);
   border: 1.5px solid var(--color-border);
   overflow: hidden;
+}
+body.dark-mode .card,
+body.dark-mode .recommendation-card {
+  background: #23272f !important;
+  border-color: #4f8cff !important;
+}
+body.dark-mode .form-label {
+  color: #f8f9fa !important;
+}
+body.dark-mode .form-control {
+  background: #181a1b !important;
+  color: #f8f9fa !important;
+  border-color: #4f8cff !important;
+}
+body.dark-mode .form-control::placeholder {
+  color: #b0b3b8 !important;
+  opacity: 1;
+}
+body.dark-mode .btn-primary {
+  background: #4f8cff !important;
+  color: #fff !important;
+  border-color: #4f8cff !important;
+}
+body.dark-mode .btn-primary:active,
+body.dark-mode .btn-primary:focus,
+body.dark-mode .btn-primary:hover {
+  background: #2563eb !important;
+  border-color: #2563eb !important;
+  color: #fff !important;
 }
