@@ -123,11 +123,15 @@ Pastikan perangkat Anda telah terinstal:
 -   **Python 3.8+**: Untuk menjalankan *script* aplikasi dan pemodelan.
 
 ### Persiapan Dataset
-1.  **Unduh Dataset**: Buka tautan Kaggle berikut dan unduh file `job_descriptions.csv`.
-    -   **Sumber**: [Job Description Dataset di Kaggle](https://www.kaggle.com/datasets/ravindrasinghrana/job-description-dataset)
-2.  **Pindahkan dan Ganti Nama File**:
-    -   Pindahkan file yang telah diunduh ke dalam direktori `kafka/`.
-    -   **PENTING**: Ganti nama file dari `job_descriptions.csv` menjadi **`dataset.csv`**.
+Dataset yang digunakan: [Job Description Dataset di Kaggle](https://www.kaggle.com/datasets/ravindrasinghrana/job-description-dataset)
+
+Untuk melakukan download, pastikan berada di root project folder, dan jalankan:
+```sh
+chmod +x download_dataset.sh
+./download_dataset.sh
+```
+
+Script tersebut akan secara otomatis melakukan download dataset, unzip, dan rename sesuai keperluan Python Producer.
 
 ### 1. Setup Otomatis (Direkomendasikan)
 Metode ini menggunakan *script* `run_automation` untuk menjalankan dan memonitor alur kerja secara berkelanjutan.
