@@ -2,32 +2,36 @@
 
 ## Sistem Rekomendasi Pekerjaan Berbasis Arsitektur Data Modern
 
-Proyek ini mendemonstrasikan sistem rekomendasi pekerjaan secara *end-to-end*, mulai dari ingesti data secara *streaming*, penyimpanan di *data lake*, pemrosesan dan pemodelan, hingga penyajian hasil melalui API. Arsitektur ini menggunakan Docker, Kafka, MinIO, Spark, dan Python untuk membangun alur kerja yang kokoh dan dapat diskalakan untuk kasus penggunaan data besar.
+Proyek ini mendemonstrasikan sistem rekomendasi pekerjaan secara *end-to-end*, mulai dari memproses data secara *streaming*, penyimpanan di *data lake*, pemrosesan dan pemodelan, hingga penyajian hasil melalui API. Arsitektur ini menggunakan Docker, Kafka, MinIO, Spark, dan Python untuk membangun alur kerja yang kokoh dan dapat diskalakan untuk kasus penggunaan data besar.
 
 ### Anggota
 
 | Nama           | NRP          |
 | -------------- | ------------ |
-| Maulana Ahmad  | `5027231010` |
+| Maulana Ahmad Zahiri | `5027231010` |
 | Amoes Noland   | `5027231028` |
-| Rafi Afnaan    | `5027231040` |
-| Danendra Fidel | `5027231063` |
-| Dimas Andhika  | `5027231074` |
+| Rafi' Afnaan Fathurrahman    | `5027231040` |
+| Danendra Fidel Khansa | `5027231063` |
+| Dimas Andhika Diputra  | `5027231074` |
 
 ---
 
 ### Daftar Isi
-- [Tentang Proyek](#tentang-proyek)
-- [Fitur Utama](#fitur-utama)
-- [Arsitektur Sistem](#arsitektur-sistem)
-- [Tumpukan Teknologi](#tumpukan-teknologi)
-- [Struktur Proyek](#struktur-proyek)
-- [Panduan Instalasi dan Penggunaan](#panduan-instalasi-dan-penggunaan)
-  - [Prasyarat](#prasyarat-prerequisites)
-  - [Persiapan Dataset](#persiapan-dataset)
-  - [Setup Otomatis (Direkomendasikan)](#1-setup-otomatis-direkomendasikan)
-  - [Setup Manual (Langkah-demi-Langkah)](#2-setup-manual-langkah-demi-langkah)
-- [Cara Menggunakan API](#cara-menggunakan-api)
+- [FP-BigData-Kelompok5](#fp-bigdata-kelompok5)
+  - [Sistem Rekomendasi Pekerjaan Berbasis Arsitektur Data Modern](#sistem-rekomendasi-pekerjaan-berbasis-arsitektur-data-modern)
+    - [Anggota](#anggota)
+    - [Daftar Isi](#daftar-isi)
+  - [Tentang Proyek](#tentang-proyek)
+  - [Fitur Utama](#fitur-utama)
+  - [Arsitektur Sistem](#arsitektur-sistem)
+  - [Tumpukan Teknologi](#tumpukan-teknologi)
+  - [Struktur Proyek](#struktur-proyek)
+  - [Panduan Instalasi dan Penggunaan](#panduan-instalasi-dan-penggunaan)
+    - [Prasyarat (Prerequisites)](#prasyarat-prerequisites)
+    - [Persiapan Dataset](#persiapan-dataset)
+    - [1. Setup Otomatis (Direkomendasikan)](#1-setup-otomatis-direkomendasikan)
+    - [2. Setup Manual (Langkah-demi-Langkah)](#2-setup-manual-langkah-demi-langkah)
+  - [Cara Menggunakan API](#cara-menggunakan-api)
 
 ---
 
@@ -144,14 +148,17 @@ source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-**Langkah 2: Jalankan Infrastruktur & Buat Bucket**
+**Langkah 2: Jalankan Infrastruktur**
 ```bash
 docker-compose up -d
 ```
-Tunggu beberapa saat hingga semua kontainer berjalan. Lalu, konfigurasikan MinIO:
+
+Sebuah bucket "jobs" untuk MinIO secara otomatis dibuat oleh Docker Compose. Namun bila ingin memastikan isi dari bucket "jobs", bisa dilakukan login dengan cara:
 1.  Buka browser dan akses MinIO Console di `http://localhost:9001`.
 2.  Login dengan kredensial: **Access Key**: `minio_access_key` / **Secret Key**: `minio_secret_key`.
-3.  Buat *bucket* baru dengan nama **`jobs`**.
+3. Bila bucket "jobs" sudah ada, maka akan terlihat di Object Browser seperti gambar di bawah ini.
+
+![Bucket Jobs](/assets/minio-buckets.png)
 
 **Langkah 3: Jalankan Script Otomasi**
 
@@ -167,13 +174,19 @@ Tunggu beberapa saat hingga semua kontainer berjalan. Lalu, konfigurasikan MinIO
     run_automation.bat
     ```
 
+Producer akan mengirim seluruh data dari `dataset.csv` ke Kafka. Consumer yang berjalan di Docker akan menerimanya dan menyimpannya ke MinIO. Berikut adalah contoh log yang diberikan oleh consumer saat menerima data:
+
+![Docker consumer](assets/docker-consumer.png)
+
+Setelah MinIO menerima banyak batch yang cukup, Spark trainer akan membuat model dan menyimpannya di folder `models_tfidf/`.
+
 **Langkah 4: Jalankan API Server**
 
-Setelah otomasi berjalan (tunggu sekitar 2-3 menit agar data awal terkirim dan model pertama dibuat), buka terminal **baru** (dengan *virtual environment* yang sama) dan jalankan API server:
+Setelah mendapatkan model hasil Spark training, maka API server dapat bekerja saat dinyalakan dengan cara:
 ```bash
 python app.py
 ```
-Server API akan berjalan di `http://localhost:4000`.
+Server API sekarang siap menerima permintaan di `http://localhost:4000`.
 
 ### 2. Setup Manual (Langkah-demi-Langkah)
 Gunakan metode ini jika Anda ingin menjalankan setiap komponen secara terpisah.
@@ -184,7 +197,9 @@ Gunakan metode ini jika Anda ingin menjalankan setiap komponen secara terpisah.
 ```bash
 python kafka/producer.py
 ```
-Producer akan mengirim seluruh data dari `dataset.csv` ke Kafka. Consumer yang berjalan di Docker akan menerimanya dan menyimpannya ke MinIO.
+Producer akan mengirim seluruh data dari `dataset.csv` ke Kafka. Consumer yang berjalan di Docker akan menerimanya dan menyimpannya ke MinIO. Berikut adalah contoh log yang diberikan oleh consumer saat menerima data:
+
+![Docker consumer](assets/docker-consumer.png)
 
 **Langkah 4: Latih Model Machine Learning**
 
@@ -196,6 +211,7 @@ Script ini akan membuat model dan menyimpannya di folder `models_tfidf/`.
 
 **Langkah 5: Jalankan API Server**
 
+Setelah mendapatkan model hasil Spark training, maka API server dapat bekerja saat dinyalakan dengan cara:
 ```bash
 python app.py
 ```
@@ -215,3 +231,7 @@ curl -X POST http://localhost:4000/recommend/query \
 
 **Contoh Respon yang Diharapkan:**
 ![Diagram Arsitektur](assets/api-test.jpeg)
+
+**Contoh Uji Coba dengan web:**
+
+![Interface](assets/web-interface.png)
