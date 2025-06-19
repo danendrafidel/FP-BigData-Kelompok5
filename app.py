@@ -105,6 +105,11 @@ def recommend_by_query():
     """
     Endpoint untuk mendapatkan rekomendasi pekerjaan berdasarkan kueri teks.
     """
+    # ▼▼▼ BARU: Tetapkan batas ambang kemiripan ▼▼▼
+    # Anda bisa menyesuaikan nilai ini. 0.1 adalah awal yang baik.
+    # Artinya, pekerjaan hanya akan direkomendasikan jika kemiripannya >= 10%.
+    SIMILARITY_THRESHOLD = 0.1 
+
     if vectorizer is None or tfidf_matrix_jobs is None or job_data_df is None:
         return jsonify({"error": "Models not loaded. Please try again later or check server logs."}), 500
 
@@ -122,26 +127,30 @@ def recommend_by_query():
         query_vector = vectorizer.transform([cleaned_query])
         
         cosine_similarities = cosine_similarity(query_vector, tfidf_matrix_jobs).flatten()
-        top_n_indices = np.argsort(cosine_similarities)[::-1][:top_n]
+        
+        # Dapatkan semua indeks, diurutkan dari yang paling mirip ke yang paling tidak mirip
+        sorted_indices = np.argsort(cosine_similarities)[::-1]
         
         recommendations = []
-        for idx in top_n_indices:
+        # ▼▼▼ LOGIKA BARU: Loop dan filter berdasarkan threshold ▼▼▼
+        for idx in sorted_indices:
+            # 1. Hentikan jika sudah mencapai jumlah top_n
+            if len(recommendations) >= top_n:
+                break
+            
+            # 2. Hentikan jika kemiripan sudah di bawah ambang batas
+            if cosine_similarities[idx] < SIMILARITY_THRESHOLD:
+                break
+                
+            # Jika lolos kedua kondisi di atas, tambahkan ke rekomendasi
             job_info = job_data_df.iloc[idx]
-
-            # --- LOGIKA BARU: Dapatkan URL Bendera dengan Fallback Globe ---
+            
+            # (Logika untuk mendapatkan flag_url tetap sama)
             DEFAULT_GLOBE_URL = "https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/icons/globe2.svg"
-
             country_name = job_info.get('Country', '').strip().lower()
             country_code = country_code_map.get(country_name)
-
-            if country_code:
-                # Jika negara ditemukan, gunakan URL bendera
-                flag_url = f"https://flagcdn.com/w40/{country_code}.png"
-            else:
-                # Jika tidak ditemukan, gunakan URL globe
-                flag_url = DEFAULT_GLOBE_URL
+            flag_url = f"https://flagcdn.com/w40/{country_code}.png" if country_code else DEFAULT_GLOBE_URL
             
-            # --- Tambahkan `flag_url` ke respons ---
             recommendations.append({
                 "job_id": str(job_info['Job Id']),
                 "title": job_info['Job Title'],
@@ -157,7 +166,7 @@ def recommend_by_query():
                 'desc': job_info['Job Description'],
                 'qualification': job_info['Qualifications'],
                 'country': job_info['Country'],
-                'flag_url': flag_url, # <-- BARU
+                'flag_url': flag_url,
                 "similarity_score": round(float(cosine_similarities[idx]), 4)
             })
         
