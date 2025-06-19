@@ -20,10 +20,10 @@ import re # Untuk pembersihan teks dasar
 try:
     from minio import Minio
     from minio.error import S3Error
-    print("✓ MinIO client imported successfully.")
+    print("[OK] MinIO client imported successfully.")
     MINIO_AVAILABLE = True
 except ImportError:
-    print("✗ MinIO client not found. Please install it: pip install minio")
+    print("[ERROR] MinIO client not found. Please install it: pip install minio")
     MINIO_AVAILABLE = False
     class Minio: pass # Dummy class
     class S3Error(Exception): pass # Dummy exception
@@ -59,12 +59,12 @@ class JobTfidfRecommender:
                     secret_key=MINIO_SECRET_KEY,
                     secure=MINIO_USE_SSL
                 )
-                print(f"✓ MinIO client initialized for endpoint: {MINIO_ENDPOINT}")
+                print(f"[OK] MinIO client initialized for endpoint: {MINIO_ENDPOINT}")
             except Exception as e:
-                print(f"✗ Warning: Failed to initialize MinIO client: {e}")
+                print(f"[ERROR] Warning: Failed to initialize MinIO client: {e}")
                 self.minio_client = None
         else:
-            print("✗ MinIO library not available. Data loading from MinIO will fail.")
+            print("[ERROR] MinIO library not available. Data loading from MinIO will fail.")
 
     def _clean_text(self, text):
         """Basic text cleaning: lowercase, remove punctuation, extra spaces."""
@@ -78,7 +78,7 @@ class JobTfidfRecommender:
     def load_and_combine_data_from_minio(self, bucket_name=MINIO_BUCKET_NAME):
         """Downloads all CSVs from MinIO, loads, and combines them into a Pandas DataFrame."""
         if not self.minio_client:
-            print("✗ MinIO client not initialized. Cannot download data.")
+            print("[ERROR] MinIO client not initialized. Cannot download data.")
             return pd.DataFrame()
 
         print(f"Attempting to load data from MinIO bucket: '{bucket_name}'...")
@@ -96,7 +96,7 @@ class JobTfidfRecommender:
                     print(f"  Downloading '{obj.object_name}' to '{local_file_path}'...")
                     try:
                         self.minio_client.fget_object(bucket_name, obj.object_name, local_file_path)
-                        print(f"    ✓ Downloaded '{obj.object_name}'.")
+                        print(f"    [OK] Downloaded '{obj.object_name}'.")
                         # Coba baca dengan error handling yang lebih baik
                         # Untuk Pandas >= 1.3.0, gunakan on_bad_lines='warn' atau 'skip'
                         # Untuk versi lama, error_bad_lines=False (untuk skip) atau warn_bad_lines=True
@@ -104,16 +104,16 @@ class JobTfidfRecommender:
                             df_batch = pd.read_csv(local_file_path, on_bad_lines='warn')
                         except AttributeError: # Untuk Pandas versi lama
                              df_batch = pd.read_csv(local_file_path, error_bad_lines=False, warn_bad_lines=True)
-                        print(f"    ✓ Loaded {len(df_batch)} records from '{os.path.basename(obj.object_name)}'.")
+                        print(f"    [OK] Loaded {len(df_batch)} records from '{os.path.basename(obj.object_name)}'.")
                         all_dataframes.append(df_batch)
                     except Exception as e_file:
-                        print(f"    ✗ Error processing file '{obj.object_name}': {e_file}")
+                        print(f"    [ERROR] Error processing file '{obj.object_name}': {e_file}")
             
             if not csv_files_found:
-                print(f"✗ No CSV files found in MinIO bucket '{bucket_name}'.")
+                print(f"[ERROR] No CSV files found in MinIO bucket '{bucket_name}'.")
                 return pd.DataFrame()
             if not all_dataframes:
-                print(f"✗ No data could be loaded from CSV files in bucket '{bucket_name}'.")
+                print(f"[ERROR] No data could be loaded from CSV files in bucket '{bucket_name}'.")
                 return pd.DataFrame()
 
             print("  Combining all loaded dataframes...")
@@ -168,11 +168,11 @@ class JobTfidfRecommender:
             self.job_data_df = combined_df[cols_to_save].copy()
             self.job_data_df.reset_index(drop=True, inplace=True)
 
-            print(f"✓ Combined data successfully: {len(self.job_data_df)} total records. Columns saved: {self.job_data_df.columns.tolist()}")
+            print(f"[OK] Combined data successfully: {len(self.job_data_df)} total records. Columns saved: {self.job_data_df.columns.tolist()}")
             return self.job_data_df
 
         except Exception as e:
-            print(f"✗ An unexpected error occurred while processing data from MinIO: {e}")
+            print(f"[ERROR] An unexpected error occurred while processing data from MinIO: {e}")
             import traceback
             traceback.print_exc()
             return pd.DataFrame()
@@ -180,12 +180,12 @@ class JobTfidfRecommender:
             if os.path.exists(temp_dir):
                 print(f"  Cleaning up temporary download directory: {temp_dir}")
                 shutil.rmtree(temp_dir)
-                print("    ✓ Temporary directory cleaned.")
+                print("    [OK] Temporary directory cleaned.")
     
     def build_tfidf_model(self):
         """Builds or loads the TF-IDF vectorizer and transforms job data."""
         if self.job_data_df is None or self.job_data_df.empty:
-            print("✗ Job data is not loaded. Cannot build TF-IDF model.")
+            print("[ERROR] Job data is not loaded. Cannot build TF-IDF model.")
             return False
 
         # Coba muat model yang sudah ada
@@ -198,10 +198,10 @@ class JobTfidfRecommender:
                 with open(TFIDF_MATRIX_FILE, 'rb') as f: self.tfidf_matrix = pickle.load(f)
                 with open(JOB_DATA_TFIDF_FILE, 'rb') as f: self.job_data_df = pickle.load(f)
                 
-                print("✓ TF-IDF model, matrix, and job data loaded successfully (cosine similarity matrix is not pre-calculated).")
+                print("[OK] TF-IDF model, matrix, and job data loaded successfully (cosine similarity matrix is not pre-calculated).")
                 return True
             except Exception as e:
-                print(f"✗ Error loading TF-IDF files: {e}. Rebuilding model...")
+                print(f"[ERROR] Error loading TF-IDF files: {e}. Rebuilding model...")
 
         print("Building new TF-IDF model...")
         # Parameter TfidfVectorizer:
@@ -212,16 +212,16 @@ class JobTfidfRecommender:
         self.vectorizer = TfidfVectorizer(stop_words='english', max_df=0.9, min_df=5, ngram_range=(1,2)) 
         
         if 'tags' not in self.job_data_df.columns:
-            print("✗ Error: 'tags' column is missing from job_data_df. Cannot build TF-IDF model.")
+            print("[ERROR] Error: 'tags' column is missing from job_data_df. Cannot build TF-IDF model.")
             return False
         self.job_data_df['tags'] = self.job_data_df['tags'].fillna('') # Pastikan tidak ada NaN
         
         self.tfidf_matrix = self.vectorizer.fit_transform(self.job_data_df['tags'])
-        print(f"✓ TF-IDF matrix created with shape: {self.tfidf_matrix.shape}")
+        print(f"[OK] TF-IDF matrix created with shape: {self.tfidf_matrix.shape}")
 
         # Tidak lagi menghitung cosine_sim_matrix penuh di sini untuk menghemat memori
         # self.cosine_sim_matrix = cosine_similarity(self.tfidf_matrix)
-        # print(f"✓ Cosine similarity matrix created with shape: {self.cosine_sim_matrix.shape}")
+        # print(f"[OK] Cosine similarity matrix created with shape: {self.cosine_sim_matrix.shape}")
 
         self.save_tfidf_model()
         return True
@@ -235,15 +235,15 @@ class JobTfidfRecommender:
             with open(TFIDF_MATRIX_FILE, 'wb') as f: pickle.dump(self.tfidf_matrix, f)
             with open(JOB_DATA_TFIDF_FILE, 'wb') as f: pickle.dump(self.job_data_df, f)
             # Tidak lagi menyimpan cosine_sim_matrix penuh
-            print("✓ TF-IDF artifacts (vectorizer, tfidf_matrix, job_data) saved successfully.")
+            print("[OK] TF-IDF artifacts (vectorizer, tfidf_matrix, job_data) saved successfully.")
         else:
-            print("✗ Nothing to save. Vectorizer, matrix, or job_data_df is missing or empty.")
+            print("[ERROR] Nothing to save. Vectorizer, matrix, or job_data_df is missing or empty.")
 
     def recommend_jobs_by_query(self, user_query, top_n=5):
         """Recommends jobs based on a user query using TF-IDF."""
         if self.vectorizer is None or self.tfidf_matrix is None or \
            self.job_data_df is None or self.job_data_df.empty:
-            print("✗ TF-IDF model not ready. Please build or load the model first.")
+            print("[ERROR] TF-IDF model not ready. Please build or load the model first.")
             return pd.DataFrame()
 
         print(f"\nRecommending jobs for query: '{user_query}'")
@@ -256,14 +256,14 @@ class JobTfidfRecommender:
         results_df = self.job_data_df.iloc[top_n_indices].copy()
         results_df['similarity_score'] = cosine_similarities_query[top_n_indices]
         
-        print(f"✓ Found {len(results_df)} similar jobs for the query.")
+        print(f"[OK] Found {len(results_df)} similar jobs for the query.")
         return results_df # Mengembalikan semua kolom yang ada di job_data_df
 
     def recommend_jobs_by_job_id(self, job_id, top_n=5):
         """Recommends jobs similar to a given job_id by calculating similarity on-demand."""
         if self.tfidf_matrix is None or \
            self.job_data_df is None or self.job_data_df.empty:
-            print("✗ TF-IDF matrix or job data not ready for item-based recommendation.")
+            print("[ERROR] TF-IDF matrix or job data not ready for item-based recommendation.")
             return pd.DataFrame()
 
         # Konversi tipe job_id agar sesuai dengan tipe di DataFrame
@@ -276,13 +276,13 @@ class JobTfidfRecommender:
             else:
                 job_id_converted = job_id # Tipe sudah sesuai
         except ValueError:
-            print(f"✗ Could not convert input job_id '{job_id}' to match DataFrame 'Job Id' type ({job_id_type_in_df}).")
+            print(f"[ERROR] Could not convert input job_id '{job_id}' to match DataFrame 'Job Id' type ({job_id_type_in_df}).")
             return pd.DataFrame()
         
         try:
             idx_list = self.job_data_df[self.job_data_df['Job Id'] == job_id_converted].index
             if not idx_list.any():
-                print(f"✗ Job Id '{job_id_converted}' not found in the dataset.")
+                print(f"[ERROR] Job Id '{job_id_converted}' not found in the dataset.")
                 return pd.DataFrame()
             idx = idx_list[0]
             target_job_title = self.job_data_df.iloc[idx]['Job Title']
@@ -305,10 +305,10 @@ class JobTfidfRecommender:
             results_df = self.job_data_df.iloc[job_indices].copy()
             results_df['similarity_score'] = [s[1] for s in sim_scores_list]
 
-            print(f"✓ Found {len(results_df)} similar jobs.")
+            print(f"[OK] Found {len(results_df)} similar jobs.")
             return results_df # Mengembalikan semua kolom
         except Exception as e:
-            print(f"✗ Error in recommend_jobs_by_job_id: {e}")
+            print(f"[ERROR] Error in recommend_jobs_by_job_id: {e}")
             import traceback
             traceback.print_exc()
             return pd.DataFrame()
@@ -320,7 +320,7 @@ def main():
     print("=" * 60)
 
     if not MINIO_AVAILABLE:
-        print("✗ MinIO library is not installed. This program requires MinIO to fetch data.")
+        print("[ERROR] MinIO library is not installed. This program requires MinIO to fetch data.")
         print("=" * 60)
         return
 
@@ -328,11 +328,11 @@ def main():
 
     initial_job_data = recommender.load_and_combine_data_from_minio()
     if initial_job_data.empty:
-        print("✗ Critical Error: No data loaded from MinIO. Exiting.")
+        print("[ERROR] Critical Error: No data loaded from MinIO. Exiting.")
         return
 
     if not recommender.build_tfidf_model():
-        print("✗ Critical Error: Failed to build or load TF-IDF model. Exiting.")
+        print("[ERROR] Critical Error: Failed to build or load TF-IDF model. Exiting.")
         return
 
     print("\n" + "="*40)
@@ -388,7 +388,7 @@ def main():
 
 
     print("\n" + "=" * 60)
-    print("✅ Process completed!")
+    print("[DONE] Process completed!")
     print(f"TF-IDF model artifacts are saved in/loaded from './models_tfidf/' directory.")
     if recommender.job_data_df is not None:
         print(f"Columns available in loaded/saved job_data_df: {recommender.job_data_df.columns.tolist()}")
