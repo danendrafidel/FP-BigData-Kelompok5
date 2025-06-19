@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 from flask import Flask, request, jsonify
+from flask import render_template
 import pickle
 import pandas as pd
 import numpy as np
@@ -70,6 +71,10 @@ def load_models():
         print(f"✗ An unexpected error occurred while loading models: {e}")
         return False
 
+@app.route('/')
+def home():
+    return render_template('index.html')
+
 @app.route('/recommend/query', methods=['POST'])
 def recommend_by_query():
     """
@@ -128,6 +133,6 @@ if __name__ == '__main__':
     if load_models():
         # Jalankan aplikasi Flask
         # Gunakan host='0.0.0.0' agar bisa diakses dari luar container/mesin lain jika perlu
-        app.run(host='0.0.0.0', port=5000, debug=True) # debug=True hanya untuk pengembangan
+        app.run(host='0.0.0.0', port=4000, debug=True) # debug=True hanya untuk pengembangan
     else:
         print("✗ Failed to load models. Flask application will not start.")
