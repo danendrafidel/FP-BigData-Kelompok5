@@ -10,3 +10,4 @@ kafka-python
 pandas
 minio
 python-dotenv
+flask
