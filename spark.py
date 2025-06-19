@@ -1,526 +1,352 @@
 #!/usr/bin/env python3
 """
-Job Recommendation System using Apache Spark
-This script creates a job recommendation model using both collaborative filtering
-and content-based filtering approaches.
+Job Recommendation System using TF-IDF and Cosine Similarity.
+Data is sourced from MinIO.
 """
 
 import os
 import sys
-from datetime import datetime
-import numpy as np
+import pickle
 import pandas as pd
+import numpy as np
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
+import tempfile
+import shutil
+import re # Untuk pembersihan teks dasar
 
-def setup_java_environment():
-    """Setup Java environment before importing Spark"""
-    jdk_path = r"C:\Program Files\Java\jdk-17"
-    
-    # Set JAVA_HOME if not already set
-    if 'JAVA_HOME' not in os.environ and os.path.exists(jdk_path):
-        os.environ['JAVA_HOME'] = jdk_path
-        print(f"✓ JAVA_HOME set to: {jdk_path}")
-    
-    # Add Java bin to PATH
-    java_bin = os.path.join(jdk_path, "bin")
-    current_path = os.environ.get('PATH', '')
-    if java_bin not in current_path and os.path.exists(java_bin):
-        os.environ['PATH'] = f"{java_bin};{current_path}"
-        print(f"✓ Java bin added to PATH: {java_bin}")
-    
-    # Set Spark environment variables
-    os.environ['PYSPARK_PYTHON'] = sys.executable
-    os.environ['PYSPARK_DRIVER_PYTHON'] = sys.executable
-    
-    # Remove problematic configurations
-    if 'SPARK_CLASSPATH' in os.environ:
-        del os.environ['SPARK_CLASSPATH']
-
-# Setup Java environment before importing Spark
-setup_java_environment()
-
-# Spark imports (after Java setup)
-try:
-    from pyspark.sql import SparkSession
-    from pyspark.sql.functions import *
-    from pyspark.sql.types import *
-    from pyspark.sql.window import Window
-    from pyspark.ml.feature import StringIndexer, VectorAssembler, HashingTF, IDF, StandardScaler
-    from pyspark.ml.recommendation import ALS
-    from pyspark.ml.classification import RandomForestClassifier
-    from pyspark.ml.evaluation import RegressionEvaluator, BinaryClassificationEvaluator
-    from pyspark.ml import Pipeline
-    print("✓ Spark imports successful")
-except ImportError as e:
-    print(f"✗ Failed to import Spark: {e}")
-    print("Please ensure PySpark is installed: pip install pyspark")
-    sys.exit(1)
-
-# MinIO client for listing files (optional)
+# --- MinIO Imports ---
 try:
     from minio import Minio
     from minio.error import S3Error
-    print("✓ MinIO imports successful")
+    print("✓ MinIO client imported successfully.")
     MINIO_AVAILABLE = True
-except ImportError as e:
-    print(f"Warning: MinIO not available: {e}")
-    Minio = None
-    S3Error = Exception
+except ImportError:
+    print("✗ MinIO client not found. Please install it: pip install minio")
     MINIO_AVAILABLE = False
+    class Minio: pass # Dummy class
+    class S3Error(Exception): pass # Dummy exception
 
-class JobRecommendationSystem:
-    def __init__(self, app_name="JobRecommendationSystem"):
-        """Initialize Spark session with minimal configuration"""
-        
-        print(f"Initializing {app_name}...")
-        print(f"Java Home: {os.environ.get('JAVA_HOME', 'Not Set')}")
-        
-        try:
-            # Create Spark session with minimal configuration (no external packages)
-            self.spark = SparkSession.builder \
-                .appName(app_name) \
-                .config("spark.sql.adaptive.enabled", "true") \
-                .config("spark.sql.adaptive.coalescePartitions.enabled", "true") \
-                .config("spark.serializer", "org.apache.spark.serializer.KryoSerializer") \
-                .config("spark.sql.execution.arrow.pyspark.enabled", "false") \
-                .getOrCreate()
-            
-            self.spark.sparkContext.setLogLevel("WARN")
-            print(f"✓ Spark session created successfully: {app_name}")
-            
-        except Exception as e:
-            print(f"✗ Error creating Spark session: {e}")
-            raise e
-        
-        # Initialize MinIO client only if available
+# --- Konstanta Aplikasi ---
+TFIDF_VECTORIZER_FILE = './models_tfidf/tfidf_vectorizer.pkl'
+TFIDF_MATRIX_FILE = './models_tfidf/tfidf_matrix.pkl' # Matriks TF-IDF dari data pekerjaan
+JOB_DATA_TFIDF_FILE = './models_tfidf/job_data_tfidf.pkl' # DataFrame pekerjaan untuk referensi
+COSINE_SIM_MATRIX_FILE = './models_tfidf/cosine_similarity_matrix.pkl' # Opsional, bisa dihitung on-the-fly
+
+# --- Konstanta Konfigurasi MinIO (GANTI DENGAN NILAI ANDA) ---
+MINIO_ENDPOINT = "localhost:9000"
+MINIO_ACCESS_KEY = "minio_access_key"
+MINIO_SECRET_KEY = "minio_secret_key"
+MINIO_BUCKET_NAME = "jobs"
+MINIO_USE_SSL = False
+
+class JobTfidfRecommender:
+    def __init__(self):
         self.minio_client = None
+        self.vectorizer = None
+        self.tfidf_matrix = None # Matriks TF-IDF untuk data pekerjaan
+        self.job_data_df = None  # DataFrame Pandas berisi info pekerjaan
+        self.cosine_sim_matrix = None # Matriks kemiripan antar pekerjaan
+
+        os.makedirs("./models_tfidf", exist_ok=True)
+
         if MINIO_AVAILABLE:
             try:
                 self.minio_client = Minio(
-                    "localhost:9000",
-                    access_key="minio_access_key",
-                    secret_key="minio_secret_key",
-                    secure=False
+                    MINIO_ENDPOINT,
+                    access_key=MINIO_ACCESS_KEY,
+                    secret_key=MINIO_SECRET_KEY,
+                    secure=MINIO_USE_SSL
                 )
-                # Test connection
-                list(self.minio_client.list_buckets())
-                print("✓ MinIO client initialized successfully")
+                print(f"✓ MinIO client initialized for endpoint: {MINIO_ENDPOINT}")
             except Exception as e:
-                print(f"Warning: MinIO connection failed: {e}")
-                print("Will use local file loading instead")
+                print(f"✗ Warning: Failed to initialize MinIO client: {e}")
                 self.minio_client = None
-        
-        # Initialize models
-        self.als_model = None
-        self.content_model = None
-        self.feature_pipeline = None
-        
-    def download_from_minio_to_local(self, bucket_name="jobs", local_dir="./data"):
-        """Download files from MinIO to local directory for processing"""
+        else:
+            print("✗ MinIO library not available. Data loading from MinIO will fail.")
+
+    def _clean_text(self, text):
+        """Basic text cleaning: lowercase, remove punctuation, extra spaces."""
+        if not isinstance(text, str):
+            return ""
+        text = text.lower()
+        text = re.sub(r'[^\w\s]', '', text) # Hapus punctuation
+        text = re.sub(r'\s+', ' ', text).strip() # Hapus spasi berlebih
+        return text
+
+    def load_and_combine_data_from_minio(self, bucket_name=MINIO_BUCKET_NAME):
+        """Downloads all CSVs from MinIO, loads, and combines them into a Pandas DataFrame."""
         if not self.minio_client:
-            return []
-            
-        print(f"Downloading files from MinIO bucket '{bucket_name}' to '{local_dir}'...")
-        os.makedirs(local_dir, exist_ok=True)
+            print("✗ MinIO client not initialized. Cannot download data.")
+            return pd.DataFrame()
+
+        print(f"Attempting to load data from MinIO bucket: '{bucket_name}'...")
+        temp_dir = tempfile.mkdtemp(prefix="minio_pandas_")
+        print(f"  Temporary download directory created: {temp_dir}")
+        all_dataframes = []
         
         try:
-            objects = list(self.minio_client.list_objects(bucket_name, recursive=True))
-            csv_files = [obj for obj in objects if obj.object_name.endswith('.csv')]
+            objects = self.minio_client.list_objects(bucket_name, recursive=True)
+            csv_files_found = False
+            for obj in objects:
+                if obj.object_name.lower().endswith('.csv'):
+                    csv_files_found = True
+                    local_file_path = os.path.join(temp_dir, os.path.basename(obj.object_name))
+                    print(f"  Downloading '{obj.object_name}' to '{local_file_path}'...")
+                    try:
+                        self.minio_client.fget_object(bucket_name, obj.object_name, local_file_path)
+                        print(f"    ✓ Downloaded '{obj.object_name}'.")
+                        df_batch = pd.read_csv(local_file_path)
+                        print(f"    ✓ Loaded {len(df_batch)} records from '{os.path.basename(obj.object_name)}'.")
+                        all_dataframes.append(df_batch)
+                    except Exception as e_file:
+                        print(f"    ✗ Error processing file '{obj.object_name}': {e_file}")
             
-            downloaded_files = []
-            for obj in csv_files[:5]:  # Limit to 5 files for testing
-                local_file = os.path.join(local_dir, os.path.basename(obj.object_name))
-                print(f"Downloading {obj.object_name}...")
-                self.minio_client.fget_object(bucket_name, obj.object_name, local_file)
-                downloaded_files.append(local_file)
-                print(f"  ✓ Downloaded to {local_file}")
+            if not csv_files_found:
+                print(f"✗ No CSV files found in MinIO bucket '{bucket_name}'.")
+                return pd.DataFrame()
+            if not all_dataframes:
+                print(f"✗ No data could be loaded from CSV files in bucket '{bucket_name}'.")
+                return pd.DataFrame()
+
+            print("  Combining all loaded dataframes...")
+            combined_df = pd.concat(all_dataframes, ignore_index=True)
             
-            return downloaded_files
+            # Kolom yang akan digunakan untuk membuat 'tags'
+            text_feature_cols = ['Job Title', 'Role', 'Job Description', 'skills', 'Responsibilities']
+            for col in text_feature_cols:
+                if col not in combined_df.columns:
+                    print(f"  Warning: Column '{col}' not found. It will be created as empty.")
+                    combined_df[col] = "" # Buat kolom kosong jika tidak ada
+                combined_df[col] = combined_df[col].fillna('').astype(str).apply(self._clean_text)
+
+            # Gabungkan fitur teks menjadi satu kolom 'tags'
+            combined_df['tags'] = combined_df[text_feature_cols].apply(lambda row: ' '.join(row.values.astype(str)), axis=1)
             
+            # Pilih kolom yang relevan untuk disimpan
+            # Pastikan 'Job Id' ada, jika tidak, buat placeholder atau berikan error
+            if 'Job Id' not in combined_df.columns:
+                 print("  Warning: 'Job Id' column not found. Using index as ID.")
+                 combined_df['Job Id'] = combined_df.index
+            
+            self.job_data_df = combined_df[['Job Id', 'Job Title', 'Company', 'tags']].copy()
+            # Hapus duplikat berdasarkan 'tags' jika ada pekerjaan yang sangat mirip deskripsinya
+            # self.job_data_df.drop_duplicates(subset=['tags'], inplace=True)
+            self.job_data_df.reset_index(drop=True, inplace=True) # Reset index setelah drop
+
+            print(f"✓ Combined data successfully: {len(self.job_data_df)} total records.")
+            return self.job_data_df
+
         except Exception as e:
-            print(f"Error downloading from MinIO: {e}")
-            return []
-    
-    def load_data_from_local_files(self, file_paths=None, data_dir="./data"):
-        """Load data from local CSV files"""
-        if file_paths is None:
-            # Find CSV files in data directory
-            if os.path.exists(data_dir):
-                file_paths = [os.path.join(data_dir, f) for f in os.listdir(data_dir) if f.endswith('.csv')]
-            else:
-                # Look for CSV files in current directory
-                file_paths = [f for f in os.listdir('.') if f.endswith('.csv')]
-        
-        if not file_paths:
-            raise Exception("No CSV files found to load")
-        
-        print(f"Loading data from {len(file_paths)} CSV files...")
-        
-        dataframes = []
-        total_records = 0
-        
-        for file_path in file_paths:
-            if not os.path.exists(file_path):
-                print(f"File not found: {file_path}")
-                continue
-                
+            print(f"✗ An unexpected error occurred while processing data from MinIO: {e}")
+            return pd.DataFrame()
+        finally:
+            if os.path.exists(temp_dir):
+                print(f"  Cleaning up temporary download directory: {temp_dir}")
+                shutil.rmtree(temp_dir)
+                print("    ✓ Temporary directory cleaned.")
+
+    def build_tfidf_model(self):
+        """Builds or loads the TF-IDF vectorizer and transforms job data."""
+        if self.job_data_df is None or self.job_data_df.empty:
+            print("✗ Job data is not loaded. Cannot build TF-IDF model.")
+            return False
+
+        # Coba muat model yang sudah ada
+        if os.path.exists(TFIDF_VECTORIZER_FILE) and \
+           os.path.exists(TFIDF_MATRIX_FILE) and \
+           os.path.exists(JOB_DATA_TFIDF_FILE):
+            print("Loading existing TF-IDF model and data...")
             try:
-                print(f"Loading: {file_path}")
-                df_batch = self.spark.read.option("header", "true") \
-                                         .option("inferSchema", "true") \
-                                         .option("multiline", "true") \
-                                         .option("escape", '"') \
-                                         .csv(file_path)
+                with open(TFIDF_VECTORIZER_FILE, 'rb') as f: self.vectorizer = pickle.load(f)
+                with open(TFIDF_MATRIX_FILE, 'rb') as f: self.tfidf_matrix = pickle.load(f)
+                with open(JOB_DATA_TFIDF_FILE, 'rb') as f: self.job_data_df = pickle.load(f)
                 
-                batch_count = df_batch.count()
-                total_records += batch_count
-                print(f"  - Loaded {batch_count} records")
-                
-                # Add file identifier
-                df_batch = df_batch.withColumn("source_file", lit(os.path.basename(file_path)))
-                dataframes.append(df_batch)
-                
+                # Opsional: Muat atau hitung ulang cosine similarity matrix
+                if os.path.exists(COSINE_SIM_MATRIX_FILE):
+                     with open(COSINE_SIM_MATRIX_FILE, 'rb') as f: self.cosine_sim_matrix = pickle.load(f)
+                elif self.tfidf_matrix is not None:
+                    print("  Calculating cosine similarity matrix...")
+                    self.cosine_sim_matrix = cosine_similarity(self.tfidf_matrix)
+
+                print("✓ TF-IDF model, matrix, and job data loaded successfully.")
+                return True
             except Exception as e:
-                print(f"Error loading {file_path}: {str(e)}")
-                continue
+                print(f"✗ Error loading TF-IDF files: {e}. Rebuilding model...")
+
+        print("Building new TF-IDF model...")
+        # Inisialisasi TfidfVectorizer
+        # stop_words='english' bisa ditambahkan jika diinginkan
+        # max_df untuk mengabaikan term yang terlalu sering muncul (misal 0.95)
+        # min_df untuk mengabaikan term yang terlalu jarang muncul (misal 2 atau 0.01)
+        # ngram_range=(1,2) bisa menangkap bi-grams juga
+        self.vectorizer = TfidfVectorizer(stop_words='english', max_df=0.9, min_df=5) 
         
-        if not dataframes:
-            raise Exception("No data could be loaded from any files")
+        # Fit dan transform kolom 'tags'
+        # Pastikan tidak ada NaN di 'tags'
+        self.job_data_df['tags'] = self.job_data_df['tags'].fillna('')
+        self.tfidf_matrix = self.vectorizer.fit_transform(self.job_data_df['tags'])
         
-        # Union all dataframes
-        print("Combining all datasets...")
-        df_combined = dataframes[0]
-        for df in dataframes[1:]:
-            df_combined = df_combined.unionByName(df, allowMissingColumns=True)
-        
-        print(f"Combined dataset: {total_records} records from {len(dataframes)} files")
-        
-        # Clean and preprocess data
-        df_cleaned = self.clean_data(df_combined)
-        return df_cleaned
-    
-    def load_data(self):
-        """Load data from available sources (MinIO first, then local)"""
-        print("Loading data...")
-        
-        # Try MinIO first
-        if self.minio_client:
-            try:
-                downloaded_files = self.download_from_minio_to_local()
-                if downloaded_files:
-                    return self.load_data_from_local_files(downloaded_files)
-            except Exception as e:
-                print(f"MinIO loading failed: {e}")
-        
-        # Fallback to local files
-        print("Loading from local files...")
-        return self.load_data_from_local_files()
-    
-    def clean_data(self, df):
-        """Clean and preprocess the dataset"""
-        print("Cleaning and preprocessing data...")
-        
-        # Show schema and sample data
-        print("Dataset schema:")
-        df.printSchema()
-        print("\nSample data:")
-        df.show(3, truncate=False)
-        
-        # Get available columns
-        available_cols = df.columns
-        print(f"Available columns: {available_cols}")
-        
-        # Remove records with null values in first few important columns
-        important_cols = available_cols[:4]  # Use first 4 columns as important
-        filter_condition = col(important_cols[0]).isNotNull()
-        for col_name in important_cols[1:]:
-            filter_condition = filter_condition & col(col_name).isNotNull()
-        
-        df_cleaned = df.filter(filter_condition)
-        
-        # Create basic features
-        df_cleaned = df_cleaned.withColumn("record_id", monotonically_increasing_id())
-        df_cleaned = df_cleaned.withColumn("user_id", (col("record_id") % 1000).cast("int"))
-        df_cleaned = df_cleaned.withColumn("item_id", (col("record_id") % 5000).cast("int"))
-        
-        # Create a rating based on available data (example logic)
-        df_cleaned = df_cleaned.withColumn("rating", 
-            when(col("record_id") % 5 == 0, 5.0)
-            .when(col("record_id") % 4 == 0, 4.0)
-            .when(col("record_id") % 3 == 0, 3.0)
-            .when(col("record_id") % 2 == 0, 2.0)
-            .otherwise(1.0)
-        )
-        
-        # Index categorical columns if they exist, but limit cardinality
-        categorical_cols = []
-        for col_name in available_cols:
-            if df_cleaned.schema[col_name].dataType == StringType():
-                categorical_cols.append(col_name)
-        
-        # Index up to 3 categorical columns with cardinality limits
-        indexers = []
-        for i, col_name in enumerate(categorical_cols[:3]):
-            output_col = f"cat_feature_{i}"
-            
-            # Limit cardinality by taking only top 50 most frequent values
-            # and grouping the rest as "other"
-            window_spec = Window.orderBy(col("count").desc())
-            top_values = df_cleaned.groupBy(col_name).count() \
-                .orderBy(col("count").desc()) \
-                .limit(50) \
-                .select(col_name)
-            
-            # Create a list of top values for filtering
-            top_values_list = [row[col_name] for row in top_values.collect()]
-            
-            # Replace values not in top 50 with "other"
-            df_cleaned = df_cleaned.withColumn(
-                f"{col_name}_limited",
-                when(col(col_name).isin(top_values_list), col(col_name))
-                .otherwise(lit("other"))
-            )
-            
-            # Now index the limited column
-            indexer = StringIndexer(
-                inputCol=f"{col_name}_limited", 
-                outputCol=output_col, 
-                handleInvalid="keep"
-            )
-            indexers.append(indexer)
-            
-            print(f"  - Limited categorical column '{col_name}' to top 50 values + 'other'")
-        
-        if indexers:
-            pipeline_indexer = Pipeline(stages=indexers)
-            df_indexed = pipeline_indexer.fit(df_cleaned).transform(df_cleaned)
+        print(f"✓ TF-IDF matrix created with shape: {self.tfidf_matrix.shape}")
+
+        # Hitung cosine similarity matrix antar semua pekerjaan
+        print("  Calculating cosine similarity matrix...")
+        self.cosine_sim_matrix = cosine_similarity(self.tfidf_matrix)
+        print(f"✓ Cosine similarity matrix created with shape: {self.cosine_sim_matrix.shape}")
+
+        # Simpan model dan data
+        self.save_tfidf_model()
+        return True
+
+    def save_tfidf_model(self):
+        """Saves the TF-IDF vectorizer, matrix, and job data."""
+        if self.vectorizer and self.tfidf_matrix is not None and self.job_data_df is not None:
+            print("Saving TF-IDF model, matrix, and job data...")
+            with open(TFIDF_VECTORIZER_FILE, 'wb') as f: pickle.dump(self.vectorizer, f)
+            with open(TFIDF_MATRIX_FILE, 'wb') as f: pickle.dump(self.tfidf_matrix, f)
+            with open(JOB_DATA_TFIDF_FILE, 'wb') as f: pickle.dump(self.job_data_df, f)
+            if self.cosine_sim_matrix is not None:
+                with open(COSINE_SIM_MATRIX_FILE, 'wb') as f: pickle.dump(self.cosine_sim_matrix, f)
+            print("✓ TF-IDF artifacts saved successfully.")
         else:
-            df_indexed = df_cleaned
+            print("✗ Nothing to save. Vectorizer, matrix, or job_data_df is missing.")
+
+    def recommend_jobs_by_query(self, user_query, top_n=5):
+        """Recommends jobs based on a user query using TF-IDF."""
+        if self.vectorizer is None or self.tfidf_matrix is None or self.job_data_df is None:
+            print("✗ TF-IDF model not ready. Please build or load the model first.")
+            return pd.DataFrame()
+
+        print(f"\nRecommending jobs for query: '{user_query}'")
+        cleaned_query = self._clean_text(user_query)
+        query_vector = self.vectorizer.transform([cleaned_query])
         
-        print(f"Data cleaned. Final dataset has {df_indexed.count()} records")
-        return df_indexed
-    
-    def train_collaborative_filtering(self, df):
-        """Train ALS collaborative filtering model"""
-        print("Training collaborative filtering model (ALS)...")
+        # Hitung cosine similarity antara query dan semua pekerjaan
+        cosine_similarities_query = cosine_similarity(query_vector, self.tfidf_matrix).flatten()
         
-        # Prepare data for ALS
-        als_data = df.select("user_id", "item_id", "rating")
+        # Dapatkan top_n pekerjaan yang paling mirip
+        # Menggunakan np.argsort untuk mendapatkan indeks, lalu membaliknya untuk descending order
+        top_n_indices = np.argsort(cosine_similarities_query)[::-1][:top_n]
         
-        # Split data
-        (training, test) = als_data.randomSplit([0.8, 0.2], seed=42)
+        results_df = self.job_data_df.iloc[top_n_indices].copy()
+        results_df['similarity_score'] = cosine_similarities_query[top_n_indices]
         
-        print(f"Training set: {training.count()} records")
-        print(f"Test set: {test.count()} records")
+        print(f"✓ Found {len(results_df)} similar jobs for the query.")
+        return results_df[['Job Id', 'Job Title', 'Company', 'similarity_score', 'tags']]
+
+    def recommend_jobs_by_job_id(self, job_id, top_n=5):
+        """Recommends jobs similar to a given job_id using precomputed cosine_sim_matrix."""
+        if self.cosine_sim_matrix is None or self.job_data_df is None:
+            print("✗ Cosine similarity matrix or job data not ready.")
+            return pd.DataFrame()
+
+        try:
+            # Dapatkan index dari job_id di DataFrame
+            idx_list = self.job_data_df[self.job_data_df['Job Id'] == job_id].index
+            if not idx_list.any(): # Jika Job Id tidak ditemukan
+                print(f"✗ Job Id '{job_id}' not found in the dataset.")
+                return pd.DataFrame()
+            idx = idx_list[0]
+            target_job_title = self.job_data_df.iloc[idx]['Job Title']
+            print(f"\nRecommending jobs similar to '{target_job_title}' (ID: {job_id})...")
+        except Exception as e:
+            print(f"✗ Error finding job with ID '{job_id}': {e}")
+            return pd.DataFrame()
+
+        # Dapatkan skor kemiripan dari matriks yang sudah dihitung
+        sim_scores = list(enumerate(self.cosine_sim_matrix[idx]))
+        sim_scores = sorted(sim_scores, key=lambda x: x[1], reverse=True)
         
-        # ALS model with reduced parameters for faster training
-        als = ALS(
-            maxIter=5,
-            regParam=0.1,
-            userCol="user_id",
-            itemCol="item_id",
-            ratingCol="rating",
-            coldStartStrategy="drop",
-            nonnegative=True
-        )
+        # Ambil top N, kecualikan diri sendiri (indeks pertama setelah sorting)
+        sim_scores = sim_scores[1:top_n+1] 
+        job_indices = [i[0] for i in sim_scores]
         
-        # Train model
-        print("Training ALS model...")
-        self.als_model = als.fit(training)
-        print("✓ ALS model trained successfully")
-        
-        # Evaluate model
-        predictions = self.als_model.transform(test)
-        evaluator = RegressionEvaluator(
-            metricName="rmse",
-            labelCol="rating",
-            predictionCol="prediction"
-        )
-        rmse = evaluator.evaluate(predictions)
-        print(f"RMSE on test data: {rmse:.4f}")
-        
-        return training, test
-    
-    def train_content_based_filtering(self, df):
-        """Train content-based filtering model using available features"""
-        print("Training content-based filtering model...")
-        
-        # Create features from available columns
-        feature_cols = []
-        
-        # Use categorical features if available, but limit to low-cardinality ones
-        cat_features = [col for col in df.columns if col.startswith("cat_feature_")]
-        
-        # Filter out high-cardinality categorical features
-        low_cardinality_features = []
-        for col_name in cat_features:
-            try:
-                distinct_count = df.select(col_name).distinct().count()
-                if distinct_count <= 50:  # Only use features with 50 or fewer unique values
-                    low_cardinality_features.append(col_name)
-                    print(f"  - Using categorical feature '{col_name}' with {distinct_count} unique values")
-                else:
-                    print(f"  - Skipping categorical feature '{col_name}' with {distinct_count} unique values (too many)")
-            except Exception as e:
-                print(f"  - Error checking cardinality of '{col_name}': {e}")
-                continue
-        
-        feature_cols.extend(low_cardinality_features)
-        
-        # Add user_id and item_id as features
-        feature_cols.extend(["user_id", "item_id"])
-        
-        if not feature_cols:
-            print("No suitable features available for content-based filtering")
-            return None, None
-        
-        print(f"Using features: {feature_cols}")
-        
-        # Create binary classification problem (high rating vs low rating)
-        df_binary = df.withColumn(
-            "high_rating",
-            when(col("rating") >= 4.0, 1.0).otherwise(0.0)
-        )
-        
-        # Assemble features
-        assembler = VectorAssembler(
-            inputCols=feature_cols,
-            outputCol="features"
-        )
-        
-        df_features = assembler.transform(df_binary)
-        
-        # Split data
-        (training, test) = df_features.randomSplit([0.8, 0.2], seed=42)
-        
-        # Random Forest classifier with increased maxBins
-        rf = RandomForestClassifier(
-            featuresCol="features",
-            labelCol="high_rating",
-            numTrees=10,
-            maxDepth=5,
-            maxBins=1000,  # Increased from default 32 to handle high-cardinality features
-            seed=42
-        )
-        
-        # Train model
-        print("Training Random Forest model...")
-        self.content_model = rf.fit(training)
-        print("✓ Content-based model trained successfully")
-        
-        # Evaluate
-        predictions = self.content_model.transform(test)
-        evaluator = BinaryClassificationEvaluator(
-            labelCol="high_rating",
-            rawPredictionCol="rawPrediction"
-        )
-        auc = evaluator.evaluate(predictions)
-        print(f"AUC for content-based model: {auc:.4f}")
-        
-        return training, test
-    
-    def generate_recommendations(self, user_id, num_recommendations=10):
-        """Generate recommendations for a specific user"""
-        if self.als_model is None:
-            print("Error: ALS model not trained yet!")
-            return None
-        
-        print(f"Generating recommendations for user {user_id}...")
-        
-        # Generate recommendations using ALS
-        user_df = self.spark.createDataFrame([(user_id,)], ["user_id"])
-        recommendations = self.als_model.recommendForUserSubset(user_df, num_recommendations)
-        
-        return recommendations
-    
-    def save_models(self, model_path="./models"):
-        """Save trained models to disk"""
-        print(f"Saving models to {model_path}...")
-        
-        # Create models directory
-        os.makedirs(model_path, exist_ok=True)
-        
-        # Save ALS model
-        if self.als_model:
-            als_path = os.path.join(model_path, "als_model")
-            self.als_model.write().overwrite().save(als_path)
-            print(f"✓ ALS model saved to {als_path}")
-        
-        # Save content-based model
-        if self.content_model:
-            content_path = os.path.join(model_path, "content_model")
-            self.content_model.write().overwrite().save(content_path)
-            print(f"✓ Content-based model saved to {content_path}")
-        
-        print("Models saved successfully!")
-    
-    def close(self):
-        """Close Spark session"""
-        self.spark.stop()
-        print("Spark session closed")
+        results_df = self.job_data_df.iloc[job_indices].copy()
+        results_df['similarity_score'] = [s[1] for s in sim_scores] # Ambil skor similarity
+
+        print(f"✓ Found {len(results_df)} similar jobs.")
+        return results_df[['Job Id', 'Job Title', 'Company', 'similarity_score', 'tags']]
+
 
 def main():
-    """Main function to run the job recommendation system"""
     print("=" * 60)
-    print("Job Recommendation System - Training Pipeline")
+    print("Job Recommendation System using TF-IDF")
     print("=" * 60)
-    
-    job_rec_system = None
-    
-    try:
-        # Initialize system
-        job_rec_system = JobRecommendationSystem()
-        
-        # Load data
-        df = job_rec_system.load_data()
-        
-        # Show basic statistics
-        print(f"\nDataset Statistics:")
-        print(f"Total records: {df.count()}")
-        print(f"Columns: {len(df.columns)}")
-        
-        # Train collaborative filtering model
-        print("\n" + "="*40)
-        print("Training Collaborative Filtering Model")
-        print("="*40)
-        train_cf, test_cf = job_rec_system.train_collaborative_filtering(df)
-        
-        # Train content-based filtering model
-        print("\n" + "="*40)
-        print("Training Content-Based Filtering Model")
-        print("="*40)
-        train_cb, test_cb = job_rec_system.train_content_based_filtering(df)
-        
-        # Generate sample recommendations
-        print("\n" + "="*40)
-        print("Generating Sample Recommendations")
-        print("="*40)
-        sample_user_id = 1
-        recommendations = job_rec_system.generate_recommendations(sample_user_id, 5)
-        
-        if recommendations:
-            print(f"Top 5 recommendations for user {sample_user_id}:")
-            recommendations.show(truncate=False)
-        
-        # Save models
-        print("\n" + "="*40)
-        print("Saving Models")
-        print("="*40)
-        job_rec_system.save_models("./models")
-        
-        print("\n" + "=" * 60)
-        print("✅ Training completed successfully!")
-        print("Models saved to: ./models")
+
+    if not MINIO_AVAILABLE:
+        print("✗ MinIO library is not installed. This program requires MinIO to fetch data.")
         print("=" * 60)
-        
-    except Exception as e:
-        print(f"❌ Error during execution: {str(e)}")
-        import traceback
-        traceback.print_exc()
+        return
+
+    recommender = JobTfidfRecommender()
+
+    # 1. Muat data dari MinIO
+    # Jika model sudah ada dan Anda tidak ingin memuat ulang dari MinIO setiap kali,
+    # Anda bisa menambahkan logika untuk melewati langkah ini jika file model sudah ada.
+    # Namun, untuk memastikan data terbaru, biasanya data dimuat ulang.
+    initial_job_data = recommender.load_and_combine_data_from_minio()
+    if initial_job_data.empty:
+        print("✗ Critical Error: No data loaded from MinIO. Exiting.")
+        return
+
+    # 2. Bangun (atau muat) model TF-IDF
+    if not recommender.build_tfidf_model():
+        print("✗ Critical Error: Failed to build or load TF-IDF model. Exiting.")
+        return
+
+    # 3. Contoh Rekomendasi berdasarkan Kueri Pengguna
+    print("\n" + "="*40)
+    print("Example: Recommendations based on User Query")
+    print("="*40)
     
-    finally:
-        # Clean up
-        if job_rec_system:
-            job_rec_system.close()
+    user_query1 = "experienced web developer proficient in javascript and react"
+    recommendations1 = recommender.recommend_jobs_by_query(user_query1, top_n=3)
+    if not recommendations1.empty:
+        print(f"\nTop 3 recommendations for query '{user_query1}':")
+        for _, row in recommendations1.iterrows():
+            print(f"  - ID: {row['Job Id']}, Title: {row['Job Title']}, Company: {row['Company']} (Score: {row['similarity_score']:.4f})")
+            # print(f"    Tags: {row['tags'][:150]}...") # Uncomment untuk melihat tags
+
+    print("-" * 30)
+    user_query2 = "social media marketing manager"
+    recommendations2 = recommender.recommend_jobs_by_query(user_query2, top_n=3)
+    if not recommendations2.empty:
+        print(f"\nTop 3 recommendations for query '{user_query2}':")
+        for _, row in recommendations2.iterrows():
+            print(f"  - ID: {row['Job Id']}, Title: {row['Job Title']}, Company: {row['Company']} (Score: {row['similarity_score']:.4f})")
+
+    # 4. Contoh Rekomendasi berdasarkan Pekerjaan Serupa (Item-to-Item)
+    # Ambil Job Id acak dari dataset untuk contoh
+    if recommender.job_data_df is not None and not recommender.job_data_df.empty:
+        print("\n" + "="*40)
+        print("Example: Recommendations based on Similar Job")
+        print("="*40)
+        sample_job_id_for_rec = recommender.job_data_df['Job Id'].sample(1).iloc[0]
+        
+        # Pastikan sample_job_id_for_rec valid (bukan NaN atau tipe yang salah)
+        if pd.notna(sample_job_id_for_rec):
+            try:
+                # Jika Job Id numerik, konversi ke tipe data yang sesuai jika perlu
+                # Dalam contoh dataset, Job Id adalah numerik tapi bisa juga string.
+                # Jika Anda menggunakan index sebagai Job Id, pastikan tipenya int.
+                # sample_job_id_for_rec = int(sample_job_id_for_rec) # Jika Job Id harus int
+                pass
+            except ValueError:
+                print(f"Warning: Sample Job Id '{sample_job_id_for_rec}' is not a valid integer. Skipping similar job recommendation.")
+            else:
+                item_based_recs = recommender.recommend_jobs_by_job_id(sample_job_id_for_rec, top_n=3)
+                if not item_based_recs.empty:
+                    # print(f"\nTop 3 jobs similar to Job ID '{sample_job_id_for_rec}':") (Sudah dicetak di dalam fungsi)
+                    for _, row in item_based_recs.iterrows():
+                        print(f"  - ID: {row['Job Id']}, Title: {row['Job Title']}, Company: {row['Company']} (Score: {row['similarity_score']:.4f})")
+        else:
+            print("Could not get a valid sample Job Id for item-based recommendation example.")
+
+
+    print("\n" + "=" * 60)
+    print("✅ Process completed!")
+    print(f"TF-IDF model artifacts are saved in/loaded from './models_tfidf/' directory.")
+    print("=" * 60)
 
 if __name__ == "__main__":
     main()
