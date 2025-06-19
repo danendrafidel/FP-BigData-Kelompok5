@@ -40,7 +40,26 @@ h1.main-title {
   color: #495057;
 }
 
-/* ▼▼▼ BARU: Gaya untuk elemen-elemen baru ▼▼▼ */
+#countryFilterContainer {
+  display: flex;
+  flex-wrap: wrap; /* Agar tombol pindah baris jika tidak muat */
+  gap: 0.5rem; /* Jarak antar tombol */
+  align-items: center;
+}
+
+.filter-btn {
+  border-radius: 20px; /* Membuat tombol lebih modern (pil) */
+  padding: 0.25rem 0.75rem;
+  font-size: 0.9em;
+  transition: background-color 0.2s, color 0.2s;
+}
+
+/* Gaya untuk tombol filter yang sedang aktif */
+.filter-btn.active {
+  background-color: #0d6efd; /* Biru primer Bootstrap */
+  color: white;
+  font-weight: 600;
+}
 
 /* Styling untuk badge metadata */
 .job-meta-badges {

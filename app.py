@@ -52,6 +52,9 @@ def load_models():
             job_data_df = pickle.load(f)
         print(f"✓ Job data DataFrame loaded from {JOB_DATA_TFIDF_FILE}")
 
+        job_data_df = job_data_df.replace({np.nan: None})
+        print("✓ DataFrame sanitized (NaN values converted to None).")
+
         if os.path.exists(COSINE_SIM_MATRIX_FILE):
             with open(COSINE_SIM_MATRIX_FILE, 'rb') as f:
                 cosine_sim_matrix_jobs = pickle.load(f)
