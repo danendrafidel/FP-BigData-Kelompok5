@@ -207,4 +207,29 @@ document.addEventListener("DOMContentLoaded", () => {
     errorSection.style.display = "block";
     resultSection.style.display = "none";
   }
+
+  // === DARK MODE TOGGLE ===
+  const darkModeToggle = document.getElementById("darkModeToggle");
+  const darkModeIcon = document.getElementById("darkModeIcon");
+
+  function setDarkMode(enabled) {
+    if (enabled) {
+      document.body.classList.add("dark-mode");
+      darkModeIcon.textContent = "☀️";
+      localStorage.setItem("darkMode", "1");
+    } else {
+      document.body.classList.remove("dark-mode");
+      darkModeIcon.textContent = "🌙";
+      localStorage.setItem("darkMode", "0");
+    }
+  }
+
+  // Inisialisasi dari localStorage
+  const darkPref = localStorage.getItem("darkMode");
+  setDarkMode(darkPref === "1");
+
+  darkModeToggle.addEventListener("click", () => {
+    const isDark = document.body.classList.contains("dark-mode");
+    setDarkMode(!isDark);
+  });
 });

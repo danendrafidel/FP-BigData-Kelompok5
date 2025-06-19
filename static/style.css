@@ -1,105 +1,144 @@
-/* Gaya dari sebelumnya... */
+/* ========== VARIABEL CSS UNTUK TEMA ========== */
+:root {
+  --font-main: "Inter", "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+  --font-size-base: 1.05rem;
+  --font-size-title: 2.2rem;
+  --font-size-card-title: 1.25rem;
+  --font-size-label: 1rem;
+  --color-bg: #f8f9fa;
+  --color-bg-card: #fff;
+  --color-text: #23272f;
+  --color-title: #0d6efd;
+  --color-border: #e9ecef;
+  --color-accent: #0d6efd;
+  --color-muted: #6c757d;
+  --color-badge: #e2e6ea;
+  --color-footer: #f8f9fa;
+  --color-shadow: rgba(0, 0, 0, 0.07);
+}
+
+body.dark-mode {
+  --color-bg: #181a1b;
+  --color-bg-card: #23272f;
+  --color-text: #f1f3f5;
+  --color-title: #4f8cff;
+  --color-border: #343a40;
+  --color-accent: #4f8cff;
+  --color-muted: #b0b3b8;
+  --color-badge: #2c3035;
+  --color-footer: #23272f;
+  --color-shadow: rgba(0, 0, 0, 0.25);
+}
+
 body {
-  background-color: #f8f9fa;
-  font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+  background-color: var(--color-bg);
+  font-family: var(--font-main);
+  color: var(--color-text);
+  font-size: var(--font-size-base);
+  transition: background 0.3s, color 0.3s;
 }
 h1.main-title {
-  color: #343a40;
-  font-weight: 300;
+  color: var(--color-title);
+  font-weight: 600;
+  font-size: var(--font-size-title);
+  letter-spacing: -1px;
+  margin-bottom: 1.5rem;
 }
+.card,
 .recommendation-card {
-  border: 1px solid #e9ecef; /* Sedikit border agar lebih tegas */
-  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.05);
-  transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
-  border-radius: 0.5rem;
-  overflow: hidden; /* Penting agar border-radius bekerja dengan baik */
+  border: 1.5px solid var(--color-border);
+  box-shadow: 0 4px 16px var(--color-shadow);
+  border-radius: 0.75rem;
+  background: var(--color-bg-card);
+  transition: background 0.3s, box-shadow 0.2s, border 0.2s;
 }
 .recommendation-card:hover {
-  transform: translateY(-5px);
-  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.1);
+  transform: translateY(-6px) scale(1.01);
+  box-shadow: 0 8px 24px var(--color-shadow);
 }
 .card-header-flex {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  background-color: #ffffff;
-  border-bottom: 1px solid #e9ecef;
+  background: transparent;
+  border-bottom: 1px solid var(--color-border);
+  padding-bottom: 0.5rem;
 }
-.card-header-flex h5 {
+.card-header-flex h5,
+.card-title {
   margin-bottom: 0;
-  color: #0d6efd;
+  color: var(--color-title);
+  font-size: var(--font-size-card-title);
+  font-weight: 600;
 }
 .country-flag {
   height: 24px;
   width: auto;
   border-radius: 3px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18);
 }
 .job-detail-label {
   font-weight: 600;
-  color: #495057;
+  color: var(--color-accent);
+  font-size: var(--font-size-label);
 }
-
 #countryFilterContainer {
   display: flex;
-  flex-wrap: wrap; /* Agar tombol pindah baris jika tidak muat */
-  gap: 0.5rem; /* Jarak antar tombol */
+  flex-wrap: wrap;
+  gap: 0.5rem;
   align-items: center;
 }
-
 .filter-btn {
-  border-radius: 20px; /* Membuat tombol lebih modern (pil) */
-  padding: 0.25rem 0.75rem;
-  font-size: 0.9em;
-  transition: background-color 0.2s, color 0.2s;
+  border-radius: 20px;
+  padding: 0.35rem 1.1rem;
+  font-size: 1em;
+  font-family: var(--font-main);
+  background: var(--color-badge);
+  color: var(--color-text);
+  border: 1.5px solid var(--color-border);
+  transition: background 0.2s, color 0.2s, border 0.2s;
 }
-
-/* Gaya untuk tombol filter yang sedang aktif */
-.filter-btn.active {
-  background-color: #0d6efd; /* Biru primer Bootstrap */
-  color: white;
-  font-weight: 600;
+.filter-btn.active,
+.filter-btn:focus {
+  background: var(--color-accent);
+  color: #fff;
+  border-color: var(--color-accent);
+  font-weight: 700;
 }
-
-/* Styling untuk badge metadata */
 .job-meta-badges {
   display: flex;
-  gap: 0.5rem; /* Jarak antar badge */
-  flex-wrap: wrap; /* Agar badge pindah ke baris baru jika tidak muat */
+  gap: 0.5rem;
+  flex-wrap: wrap;
   margin-top: 0.5rem;
   margin-bottom: 1rem;
 }
-
-/* Area detail yang bisa di-collapse */
 .details-collapse {
-  background-color: #f8f9fa; /* Warna latar sedikit berbeda */
-  border-top: 1px dashed #ced4da;
+  background: var(--color-bg);
+  border-top: 1px dashed var(--color-border);
   padding: 1rem;
+  color: var(--color-text);
 }
-
 .details-collapse h6 {
   font-weight: 700;
-  color: #343a40;
+  color: var(--color-title);
+  margin-top: 0.5rem;
+  margin-bottom: 0.25rem;
 }
-/* ▲▲▲ AKHIR GAYA BARU ▲▲▲ */
-
 .card-footer {
-  background-color: #f8f9fa;
+  background: var(--color-footer);
   text-align: right;
-  font-size: 0.9em;
-  border-top: 1px solid #e9ecef;
+  font-size: 0.95em;
+  border-top: 1px solid var(--color-border);
 }
-
 #loader {
   border: 4px solid #f3f3f3;
-  border-top: 4px solid #0d6efd;
+  border-top: 4px solid var(--color-accent);
   border-radius: 50%;
   width: 40px;
   height: 40px;
   animation: spin 1s linear infinite;
   margin: 20px auto;
 }
-
 @keyframes spin {
   0% {
     transform: rotate(0deg);
@@ -107,4 +146,29 @@ h1.main-title {
   100% {
     transform: rotate(360deg);
   }
+}
+/* ========== DARK MODE TOGGLE BUTTON ========== */
+#darkModeToggle {
+  position: fixed;
+  top: 1.5rem;
+  right: 2rem;
+  z-index: 1000;
+  background: var(--color-bg-card);
+  color: var(--color-title);
+  border: 1.5px solid var(--color-border);
+  border-radius: 50%;
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.5rem;
+  cursor: pointer;
+  box-shadow: 0 2px 8px var(--color-shadow);
+  transition: background 0.2s, color 0.2s, border 0.2s;
+}
+#darkModeToggle:hover {
+  background: var(--color-accent);
+  color: #fff;
+  border-color: var(--color-accent);
 }
