@@ -12,3 +12,4 @@ minio
 python-dotenv
 flask
 schedule
+rapidfuzz
